@@ -87,6 +87,11 @@ deployments:
       values:
         containers:
           - image: ${E2E_IMAGE}
+            env:
+              - name: FILES_ADDRESS
+                value: "files:50051"
+              - name: MCP_BASE_URL
+                value: "http://files-mcp:8100"
         labels:
           app.kubernetes.io/name: files-mcp-e2e
 

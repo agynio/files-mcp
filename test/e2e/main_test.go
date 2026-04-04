@@ -105,7 +105,3 @@ func callReadFile(t *testing.T, session *mcp.ClientSession, fileID string) *mcp.
 	}
 	return result
 }
-
-func TestE2EPlaceholder(t *testing.T) {
-	t.Skip("e2e tests require the full platform stack")
-}

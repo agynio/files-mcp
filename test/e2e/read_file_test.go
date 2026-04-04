@@ -22,6 +22,8 @@ var png1x1 = []byte{
 	0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
 }
 
+const readFileToolDescription = "Read a file from the platform. Use this tool to access file content when you see agyn://file/ references in the conversation."
+
 func TestReadFileTextRoundTrip(t *testing.T) {
 	session := connectMCP(t)
 	content := "hello files-mcp"
@@ -132,6 +134,9 @@ func TestReadFileListTools(t *testing.T) {
 	}
 	if result.Tools[0].Name != "read_file" {
 		t.Fatalf("tool name = %q, want %q", result.Tools[0].Name, "read_file")
+	}
+	if result.Tools[0].Description != readFileToolDescription {
+		t.Fatalf("tool description = %q, want %q", result.Tools[0].Description, readFileToolDescription)
 	}
 }
 

@@ -3,6 +3,7 @@ module github.com/agynio/files-mcp
 go 1.25.7
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11

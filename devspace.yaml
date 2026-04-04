@@ -76,6 +76,16 @@ functions:
                   type: RuntimeDefault
     EOF
     )"
+  deploy_pr_image: |-
+    echo "Deploying PR image to cluster..."
+    IMAGE="${PR_IMAGE:-}"
+    if [ -z "$IMAGE" ]; then
+      echo "ERROR: PR_IMAGE not set, aborting hot deploy"
+      exit 1
+    fi
+    kubectl set image deployment/files-mcp-files-mcp files-mcp="$IMAGE" -n ${FILES_MCP_NAMESPACE}
+    kubectl rollout status deployment/files-mcp-files-mcp -n ${FILES_MCP_NAMESPACE} --timeout=120s
+    echo "PR image deployed successfully"
 
 deployments:
   e2e-runner:
@@ -131,17 +141,22 @@ pipelines:
 
   test-e2e:
     run: |-
+      disable_argocd_sync
+      deploy_pr_image
       create_deployments e2e-runner
       start_dev e2e-runner &
       sleep 5
+      set +e
       exec_container \
         --label-selector "app.kubernetes.io/name=files-mcp-e2e" \
         -n ${FILES_MCP_NAMESPACE} \
         -- bash -c 'cd /opt/app/data && buf generate buf.build/agynio/api --include-imports --path agynio/api/files/v1 --path agynio/api/gateway/v1/files.proto && go test -v -count=1 -tags e2e ./test/e2e/'
       EXIT_CODE=$?
+      set -e
       stop_dev e2e-runner
       purge_deployments e2e-runner
-      exit $EXIT_CODE
+      restore_argocd_sync
+      exit ${EXIT_CODE}
 
 hooks:
   - name: restore-argocd-auto-sync

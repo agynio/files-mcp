@@ -31,7 +31,7 @@ func run() error {
 		return err
 	}
 
-	conn, err := filesclient.Dial(ctx, cfg.GatewayAddress, cfg.APIToken)
+	conn, err := filesclient.Dial(cfg.GatewayAddress, cfg.APIToken)
 	if err != nil {
 		return fmt.Errorf("dial gateway: %w", err)
 	}

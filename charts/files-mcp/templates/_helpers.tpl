@@ -4,7 +4,7 @@
 {{- $mcpPort := int (default 8100 .Values.filesMcp.mcpPort) -}}
 {{- $env = append $env (dict "name" "MCP_PORT" "value" (printf "%d" $mcpPort)) -}}
 
-{{- $gatewayAddress := required "filesMcp.gatewayAddress is required" (trimAll " \n\t" (default "gateway.ziti" .Values.filesMcp.gatewayAddress)) -}}
+{{- $gatewayAddress := trimAll " \n\t" (default "gateway.ziti" .Values.filesMcp.gatewayAddress) -}}
 {{- $env = append $env (dict "name" "GATEWAY_ADDRESS" "value" $gatewayAddress) -}}
 
 {{- $tokenSecret := trim (default "" .Values.filesMcp.apiToken.existingSecret) -}}

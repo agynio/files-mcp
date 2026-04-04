@@ -15,11 +15,12 @@ import (
 )
 
 type fakeFilesClient struct {
-	metadata    *filesv1.FileInfo
-	metadataErr error
-	contentErr  error
-	chunks      [][]byte
-	streamErr   error
+	metadata       *filesv1.FileInfo
+	metadataErr    error
+	contentErr     error
+	chunks         [][]byte
+	streamErr      error
+	streamErrIndex int
 }
 
 func (f *fakeFilesClient) GetFileMetadata(context.Context, string) (*filesv1.FileInfo, error) {
@@ -33,17 +34,18 @@ func (f *fakeFilesClient) GetFileContent(context.Context, string) (filesclient.F
 	if f.contentErr != nil {
 		return nil, f.contentErr
 	}
-	return &fakeStream{chunks: f.chunks, err: f.streamErr}, nil
+	return &fakeStream{chunks: f.chunks, err: f.streamErr, errIndex: f.streamErrIndex}, nil
 }
 
 type fakeStream struct {
-	chunks [][]byte
-	err    error
-	index  int
+	chunks   [][]byte
+	err      error
+	errIndex int
+	index    int
 }
 
 func (f *fakeStream) Recv() (*filesv1.GetFileContentResponse, error) {
-	if f.err != nil {
+	if f.err != nil && f.errIndex == f.index {
 		err := f.err
 		f.err = nil
 		return nil, err
@@ -187,6 +189,55 @@ func TestReadFileServiceUnavailable(t *testing.T) {
 	text := expectErrorContent(t, result)
 	if text != "platform service unavailable" {
 		t.Fatalf("error = %q, want %q", text, "platform service unavailable")
+	}
+}
+
+func TestReadFileStreamError(t *testing.T) {
+	client := &fakeFilesClient{
+		metadata: &filesv1.FileInfo{
+			Id:          "file-7",
+			ContentType: "text/plain",
+			SizeBytes:   12,
+		},
+		chunks:         [][]byte{[]byte("hello ")},
+		streamErr:      status.Error(codes.Internal, "stream blew up"),
+		streamErrIndex: 1,
+	}
+	server := New(client, Options{MaxFileSize: 20})
+
+	result := callReadFile(t, server, "file-7")
+	text := expectErrorContent(t, result)
+	if text != "failed to download file: stream blew up" {
+		t.Fatalf("error = %q, want %q", text, "failed to download file: stream blew up")
+	}
+}
+
+func TestReadFileDeadlineExceeded(t *testing.T) {
+	client := &fakeFilesClient{metadataErr: context.DeadlineExceeded}
+	server := New(client, Options{MaxFileSize: 20})
+
+	result := callReadFile(t, server, "file-8")
+	text := expectErrorContent(t, result)
+	if text != "platform service unavailable" {
+		t.Fatalf("error = %q, want %q", text, "platform service unavailable")
+	}
+}
+
+func TestReadFileContentRPCError(t *testing.T) {
+	client := &fakeFilesClient{
+		metadata: &filesv1.FileInfo{
+			Id:          "file-9",
+			ContentType: "text/plain",
+			SizeBytes:   5,
+		},
+		contentErr: status.Error(codes.Internal, "content down"),
+	}
+	server := New(client, Options{MaxFileSize: 20})
+
+	result := callReadFile(t, server, "file-9")
+	text := expectErrorContent(t, result)
+	if text != "failed to download file: content down" {
+		t.Fatalf("error = %q, want %q", text, "failed to download file: content down")
 	}
 }
 

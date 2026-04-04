@@ -2,6 +2,7 @@ package filesclient
 
 import (
 	"context"
+	"fmt"
 
 	filesv1 "github.com/agynio/files-mcp/.gen/go/agynio/api/files/v1"
 	gatewayv1 "github.com/agynio/files-mcp/.gen/go/agynio/api/gateway/v1"
@@ -29,12 +30,12 @@ func (BearerToken) RequireTransportSecurity() bool {
 	return false
 }
 
-func Dial(ctx context.Context, address string, token string) (*grpc.ClientConn, error) {
+func Dial(address string, token string) (*grpc.ClientConn, error) {
 	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if token != "" {
 		options = append(options, grpc.WithPerRPCCredentials(BearerToken{Token: token}))
 	}
-	return grpc.DialContext(ctx, address, options...)
+	return grpc.NewClient(address, options...)
 }
 
 func New(conn *grpc.ClientConn) *Client {
@@ -46,7 +47,11 @@ func (c *Client) GetFileMetadata(ctx context.Context, fileID string) (*filesv1.F
 	if err != nil {
 		return nil, err
 	}
-	return resp.GetFile(), nil
+	file := resp.GetFile()
+	if file == nil {
+		return nil, fmt.Errorf("empty metadata response for file %s", fileID)
+	}
+	return file, nil
 }
 
 func (c *Client) GetFileContent(ctx context.Context, fileID string) (FileContentStream, error) {

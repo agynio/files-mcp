@@ -18,8 +18,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const defaultMaxFileSize = int64(20 * 1024 * 1024)
-
 const (
 	readFileToolName        = "read_file"
 	readFileToolDescription = "Read a file from the platform. Use this tool to access file content when you see agyn://file/ references in the conversation."
@@ -59,7 +57,7 @@ type readFileInput struct {
 func New(filesClient FilesClient, opts Options) *Server {
 	maxSize := opts.MaxFileSize
 	if maxSize <= 0 {
-		maxSize = defaultMaxFileSize
+		panic("mcpserver.New: MaxFileSize must be positive")
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
@@ -102,9 +100,6 @@ func (s *Server) handleReadFile(ctx context.Context, req *mcp.CallToolRequest) (
 	if err != nil {
 		return toolErrorResult(mapServiceError(err, input.FileID)), nil
 	}
-	if metadata == nil {
-		return toolErrorResult("failed to download file: missing metadata"), nil
-	}
 
 	sizeBytes := metadata.GetSizeBytes()
 	if sizeBytes > s.maxFileSize {
@@ -126,7 +121,7 @@ func (s *Server) handleReadFile(ctx context.Context, req *mcp.CallToolRequest) (
 }
 
 func parseReadFileInput(req *mcp.CallToolRequest) (readFileInput, error) {
-	if req == nil || req.Params == nil || len(req.Params.Arguments) == 0 {
+	if len(req.Params.Arguments) == 0 {
 		return readFileInput{}, errors.New("file_id is required")
 	}
 	var input readFileInput
@@ -141,12 +136,13 @@ func parseReadFileInput(req *mcp.CallToolRequest) (readFileInput, error) {
 }
 
 func buildContent(contentType string, fileID string, data []byte) mcp.Content {
-	switch contenttype.Classify(contentType) {
+	contentKind := contenttype.Classify(contentType)
+	switch contentKind {
 	case contenttype.KindImage:
 		return &mcp.ImageContent{Data: data, MIMEType: contentType}
 	case contenttype.KindText:
 		return &mcp.TextContent{Text: string(data)}
-	default:
+	case contenttype.KindResource:
 		return &mcp.EmbeddedResource{
 			Resource: &mcp.ResourceContents{
 				URI:      fmt.Sprintf("agyn://file/%s", fileID),
@@ -154,6 +150,8 @@ func buildContent(contentType string, fileID string, data []byte) mcp.Content {
 				Blob:     data,
 			},
 		}
+	default:
+		panic(fmt.Sprintf("buildContent: unhandled content kind %d", contentKind))
 	}
 }
 
@@ -166,9 +164,6 @@ func readAllContent(stream filesclient.FileContentStream) ([]byte, error) {
 		}
 		if err != nil {
 			return nil, err
-		}
-		if resp == nil {
-			continue
 		}
 		if _, err := buffer.Write(resp.GetChunkData()); err != nil {
 			return nil, err

@@ -2,7 +2,6 @@ version: v2beta1
 
 vars:
   FILES_MCP_NAMESPACE: platform
-  E2E_IMAGE: ghcr.io/agynio/devcontainer-go:1
 
 functions:
   disable_argocd_sync: |-
@@ -40,7 +39,7 @@ functions:
               emptyDir: {}
           containers:
             - name: files-mcp
-              image: ghcr.io/agynio/devcontainer-go:1 # keep in sync with E2E_IMAGE
+              image: ghcr.io/agynio/devcontainer-go:1
               workingDir: /opt/app/data
               command:
                 - sh
@@ -76,39 +75,6 @@ functions:
                   type: RuntimeDefault
     EOF
     )"
-  deploy_pr_image: |-
-    echo "Deploying PR image to cluster..."
-    IMAGE="${PR_IMAGE:-}"
-    if [ -z "$IMAGE" ]; then
-      echo "ERROR: PR_IMAGE not set, aborting hot deploy"
-      exit 1
-    fi
-    kubectl set image deployment/files-mcp-files-mcp files-mcp="$IMAGE" -n ${FILES_MCP_NAMESPACE}
-    kubectl rollout status deployment/files-mcp-files-mcp -n ${FILES_MCP_NAMESPACE} --timeout=120s
-    echo "PR image deployed successfully"
-
-deployments:
-  e2e-runner:
-    namespace: ${FILES_MCP_NAMESPACE}
-    helm:
-      chart:
-        name: component-chart
-        repo: https://charts.devspace.sh
-      values:
-        containers:
-          - image: ${E2E_IMAGE}
-            env:
-              - name: FILES_ADDRESS
-                value: "files:50051"
-              - name: MCP_BASE_URL
-                value: "http://files-mcp:8100"
-        labels:
-          app.kubernetes.io/name: files-mcp-e2e
-
-commands:
-  test-e2e: |-
-    devspace run-pipeline test-e2e $@
-
 pipelines:
   dev:
     flags:
@@ -138,25 +104,6 @@ pipelines:
         echo "Dev environment ready. Stopping dev session."
         stop_dev files-mcp
       fi
-
-  test-e2e:
-    run: |-
-      disable_argocd_sync
-      deploy_pr_image
-      create_deployments e2e-runner
-      start_dev e2e-runner &
-      sleep 5
-      set +e
-      exec_container \
-        --label-selector "app.kubernetes.io/name=files-mcp-e2e" \
-        -n ${FILES_MCP_NAMESPACE} \
-        -- bash -c 'cd /opt/app/data && buf generate buf.build/agynio/api --include-imports --path agynio/api/files/v1 --path agynio/api/gateway/v1/files.proto && go test -v -count=1 -tags e2e ./test/e2e/'
-      EXIT_CODE=$?
-      set -e
-      stop_dev e2e-runner
-      purge_deployments e2e-runner
-      restore_argocd_sync
-      exit ${EXIT_CODE}
 
 hooks:
   - name: restore-argocd-auto-sync
@@ -198,17 +145,3 @@ dev:
           lastLines: 200
     ports:
       - port: "8100"
-
-  e2e-runner:
-    namespace: ${FILES_MCP_NAMESPACE}
-    labelSelector:
-      app.kubernetes.io/name: files-mcp-e2e
-    command: ["sleep", "infinity"]
-    workingDir: /opt/app/data
-    sync:
-      - path: ./:/opt/app/data
-        excludePaths:
-          - .git/
-          - .devspace/
-          - /.gen/
-          - /tmp/

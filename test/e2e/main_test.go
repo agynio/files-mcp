@@ -5,34 +5,35 @@ package e2e
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
-	filesv1 "github.com/agynio/files-mcp/.gen/go/agynio/api/files/v1"
+	"github.com/agynio/files-mcp/internal/mcpserver"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
-const requestTimeout = 30 * time.Second
+const (
+	requestTimeout = 30 * time.Second
+	maxFileSize    = int64(20 * 1024 * 1024)
+)
 
 var (
-	filesAddress = envOrDefault("FILES_ADDRESS", "files:50051")
-	mcpBaseURL   = envOrDefault("MCP_BASE_URL", "http://files-mcp:8100")
+	mcpBaseURL       string
+	mcpServer        *httptest.Server
+	fakeFilesBackend *fakeFiles
 )
 
-func envOrDefault(key string, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
 func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+	fakeFilesBackend = newFakeFiles()
+	server := mcpserver.New(fakeFilesBackend, mcpserver.Options{MaxFileSize: maxFileSize})
+	mcpServer = httptest.NewServer(server.Handler())
+	mcpBaseURL = mcpServer.URL
+
+	exitCode := m.Run()
+	mcpServer.Close()
+	os.Exit(exitCode)
 }
 
 func connectMCP(t *testing.T) *mcp.ClientSession {
@@ -54,42 +55,11 @@ func connectMCP(t *testing.T) *mcp.ClientSession {
 
 func uploadTestFile(t *testing.T, filename string, contentType string, content []byte) string {
 	t.Helper()
-	conn, err := grpc.NewClient(filesAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	fileID, err := fakeFilesBackend.Upload(filename, contentType, content)
 	if err != nil {
-		t.Fatalf("dial files service: %v", err)
+		t.Fatalf("upload file: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = conn.Close()
-	})
-	client := filesv1.NewFilesServiceClient(conn)
-
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
-	t.Cleanup(cancel)
-	stream, err := client.UploadFile(ctx)
-	if err != nil {
-		t.Fatalf("create upload stream: %v", err)
-	}
-
-	metadata := &filesv1.UploadFileMetadata{
-		Filename:    filename,
-		ContentType: contentType,
-		SizeBytes:   int64(len(content)),
-	}
-	if err := stream.Send(&filesv1.UploadFileRequest{Payload: &filesv1.UploadFileRequest_Metadata{Metadata: metadata}}); err != nil {
-		t.Fatalf("send metadata: %v", err)
-	}
-	if err := stream.Send(&filesv1.UploadFileRequest{Payload: &filesv1.UploadFileRequest_Chunk{Chunk: &filesv1.UploadFileChunk{Data: content}}}); err != nil {
-		t.Fatalf("send chunk: %v", err)
-	}
-
-	resp, err := stream.CloseAndRecv()
-	if err != nil {
-		t.Fatalf("close upload stream: %v", err)
-	}
-	if resp == nil || resp.GetFile() == nil || resp.GetFile().GetId() == "" {
-		t.Fatalf("upload response missing file info")
-	}
-	return resp.GetFile().GetId()
+	return fileID
 }
 
 func callReadFile(t *testing.T, session *mcp.ClientSession, fileID string) *mcp.CallToolResult {

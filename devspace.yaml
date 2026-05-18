@@ -2,6 +2,7 @@ version: v2beta1
 
 vars:
   FILES_MCP_NAMESPACE: platform
+  DEV_IMAGE: ghcr.io/agynio/devcontainer-go:1
 
 functions:
   disable_argocd_sync: |-
@@ -24,57 +25,74 @@ functions:
     else
       echo "WARNING: ArgoCD Application 'files-mcp' not found in argocd namespace."
     fi
-  patch_deployment: |-
-    echo "Patching files-mcp deployment for DevSpace..."
-    kubectl patch deployment files-mcp-files-mcp -n ${FILES_MCP_NAMESPACE} --type strategic --patch "$(cat <<'EOF'
-    spec:
-      template:
-        spec:
-          securityContext:
-            runAsUser: 1000
-            fsGroup: 1000
-          initContainers: []
-          volumes:
-            - name: data
-              emptyDir: {}
-          containers:
-            - name: files-mcp
-              image: ghcr.io/agynio/devcontainer-go:1
-              workingDir: /opt/app/data
-              command:
-                - sh
-                - -c
-                - |
-                  set -eu
-                  elapsed=0
-                  while [ ! -f /opt/app/data/go.mod ]; do
-                    sleep 1; elapsed=$((elapsed + 1))
-                    [ "$elapsed" -ge 120 ] && { echo "ERROR: sync timeout" >&2; exit 1; }
-                  done
-                  buf generate buf.build/agynio/api --include-imports --path agynio/api/files/v1 --path agynio/api/gateway/v1/files.proto
-                  exec go run ./cmd/files-mcp
-              volumeMounts:
-                - name: data
-                  mountPath: /opt/app/data
-              resources:
-                requests:
-                  cpu: 500m
-                  memory: 1Gi
-                limits:
-                  cpu: "2"
-                  memory: 4Gi
-              securityContext:
-                runAsNonRoot: true
-                runAsUser: 1000
-                runAsGroup: 1000
-                readOnlyRootFilesystem: false
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop: ["ALL"]
-                seccompProfile:
-                  type: RuntimeDefault
-    EOF
-    )"
+deployments:
+  files-mcp:
+    namespace: ${FILES_MCP_NAMESPACE}
+    helm:
+      chart:
+        name: component-chart
+        repo: https://charts.devspace.sh
+      values:
+        labels:
+          app.kubernetes.io/name: files-mcp
+          app.kubernetes.io/instance: files-mcp
+        containers:
+          - name: files-mcp
+            image: ${DEV_IMAGE}
+            workingDir: /opt/app/data
+            command:
+              - sh
+              - -c
+              - |
+                set -eu
+                elapsed=0
+                while [ ! -f /opt/app/data/go.mod ]; do
+                  sleep 1; elapsed=$((elapsed + 1))
+                  [ "$elapsed" -ge 120 ] && { echo "ERROR: sync timeout" >&2; exit 1; }
+                done
+                buf generate buf.build/agynio/api --include-imports --path agynio/api/files/v1 --path agynio/api/gateway/v1/files.proto
+                exec go run ./cmd/files-mcp
+            env:
+              - name: MCP_PORT
+                value: "8100"
+              - name: GATEWAY_ADDRESS
+                value: gateway.ziti
+              - name: MAX_FILE_SIZE
+                value: "20971520"
+            ports:
+              - name: http
+                containerPort: 8100
+            volumeMounts:
+              - containerPath: /opt/app/data
+                volume:
+                  name: data
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              runAsGroup: 1000
+              readOnlyRootFilesystem: false
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            resources:
+              requests:
+                cpu: 500m
+                memory: 1Gi
+              limits:
+                cpu: "2"
+                memory: 4Gi
+        service:
+          ports:
+            - name: http
+              port: 8100
+              containerPort: 8100
+        volumes:
+          - name: data
+            emptyDir: {}
+
 pipelines:
   dev:
     flags:
@@ -83,7 +101,7 @@ pipelines:
         description: "Keep DevSpace running and stream logs"
     run: |-
       disable_argocd_sync
-      patch_deployment
+      create_deployments files-mcp
       if [ "$(get_flag "watch")" == "true" ]; then
         start_dev --disable-pod-replace files-mcp
       else

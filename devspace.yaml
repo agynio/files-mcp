@@ -81,9 +81,6 @@ deployments:
               requests:
                 cpu: 500m
                 memory: 1Gi
-              limits:
-                cpu: "2"
-                memory: 4Gi
         service:
           ports:
             - name: http
@@ -153,6 +150,8 @@ dev:
               - .devspace/
               - /.gen/
               - /tmp/
+              - /e2e/
+              - /bootstrap/
             downloadExcludePaths:
               - .git/
               - .devspace/

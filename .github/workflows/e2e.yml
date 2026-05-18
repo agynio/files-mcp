@@ -28,4 +28,5 @@ jobs:
       - name: Run E2E tests
         uses: agynio/e2e/.github/actions/run-tests@main
         with:
-          service: files_mcp
+          tag: svc_gateway
+          include_smoke: false

@@ -27,6 +27,8 @@ jobs:
 
       - name: Run E2E tests
         uses: agynio/e2e/.github/actions/run-tests@main
+        env:
+          E2E_SUITES: go-core
         with:
-          tag: svc_gateway
+          tag: svc_files
           include_smoke: false

@@ -147,7 +147,7 @@ metrics:
 
 filesMcp:
   mcpPort: 8100
-  gatewayAddress: "gateway.ziti"
+  gatewayAddress: "gateway.agyn"
   maxFileSize: 20971520
   apiToken:
     value: ""

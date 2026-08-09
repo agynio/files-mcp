@@ -56,7 +56,7 @@ deployments:
               - name: MCP_PORT
                 value: "8100"
               - name: GATEWAY_ADDRESS
-                value: gateway.ziti
+                value: gateway.agyn
               - name: MAX_FILE_SIZE
                 value: "20971520"
             ports:

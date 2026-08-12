@@ -1,7 +1,7 @@
 version: v2beta1
 
 vars:
-  FILES_MCP_NAMESPACE: platform
+  FILES_MCP_NAMESPACE: agyn-platform
   DEV_IMAGE: ghcr.io/agynio/devcontainer-go:1
 
 functions:
